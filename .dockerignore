@@ -1,0 +1,16 @@
+# The API image is built from the repo root, so Docker reads this root
+# .dockerignore. Keeps the build context small and secrets out of the image.
+**/node_modules
+**/dist
+**/.next
+**/out
+**/coverage
+**/.turbo
+.git
+**/.env
+**/.env.*
+!**/.env.example
+**/*.log
+.DS_Store
+playwright-report
+test-results

@@ -1,0 +1,32 @@
+{
+  "name": "resumematch",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Analyze how well a resume matches a job description, powered by Claude.",
+  "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm --parallel --filter \"./apps/*\" dev",
+    "build": "pnpm -r build",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "pnpm --filter web test:e2e",
+    "lint": "eslint .",
+    "typecheck": "pnpm -r typecheck",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.17.0",
+    "@prisma/client": "^6.1.0",
+    "@types/node": "^22.10.0",
+    "eslint": "^9.17.0",
+    "typescript-eslint": "^8.18.0",
+    "prisma": "^6.1.0",
+    "typescript": "^5.7.0",
+    "vitest": "^2.1.0"
+  }
+}

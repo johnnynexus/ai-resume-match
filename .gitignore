@@ -1,0 +1,36 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+build/
+.next/
+out/
+*.tsbuildinfo
+
+# Prisma
+prisma/*.db
+prisma/migrations/dev.db*
+
+# Environment — never commit real secrets (.env.example is committed)
+.env
+.env.*
+!.env.example
+
+# Test / coverage
+coverage/
+playwright-report/
+test-results/
+.playwright/
+
+# Logs
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

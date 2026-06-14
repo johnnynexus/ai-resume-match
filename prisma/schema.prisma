@@ -1,0 +1,51 @@
+// ResumeMatch data model. See CLAUDE.md "Data Model (Prisma)" for the rationale
+// behind the duplicated overallScore column and the inputHash caching key.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String     @id @default(cuid())
+  email     String     @unique
+  analyses  Analysis[]
+  createdAt DateTime   @default(now())
+}
+
+model Resume {
+  id         String   @id @default(cuid())
+  userId     String
+  fileName   String
+  parsedText String   @db.Text
+  createdAt  DateTime @default(now())
+}
+
+model JobDescription {
+  id        String   @id @default(cuid())
+  userId    String
+  title     String?
+  company   String?
+  rawText   String   @db.Text
+  createdAt DateTime @default(now())
+}
+
+model Analysis {
+  id               String   @id @default(cuid())
+  userId           String
+  resumeId         String
+  jobDescriptionId String
+  overallScore     Int // pulled out as a real column for sorting/filtering
+  resultJson       Json // full Claude output; evolve shape without migrations
+  inputHash        String // sha256 of (parsedText + jobText) for caching
+  createdAt        DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+  @@index([inputHash])
+}
