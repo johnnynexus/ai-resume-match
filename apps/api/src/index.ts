@@ -7,6 +7,7 @@ import { logger } from "./lib/logger.js";
 import { AppError, toErrorResponse } from "./lib/errors.js";
 import { analyzeRoutes } from "./routes/analyze.js";
 import { resumeRoutes } from "./routes/resume.js";
+import { authOnRequest } from "./plugins/auth.js";
 
 async function buildServer() {
   const cfg = getConfig();
@@ -23,6 +24,12 @@ async function buildServer() {
 
   app.get("/health", async () => ({ status: "ok" }));
 
+  // Register auth on the ROOT instance so the hook runs for the route plugins
+  // below. If this were wrapped in app.register(), Fastify encapsulation would
+  // scope the hook to its own (route-less) subtree and it would never fire for
+  // /api/analyze — silently leaving request.userId undefined (no persistence).
+  app.decorateRequest("userId", null);
+  app.addHook("onRequest", authOnRequest);
   await app.register(analyzeRoutes);
   await app.register(resumeRoutes);
 
@@ -53,6 +60,13 @@ async function main() {
       { persistence: cfg.persistenceEnabled, model: cfg.model },
       `API listening on :${cfg.port}`,
     );
+    if (!cfg.internalApiSecret) {
+      logger.warn(
+        "INTERNAL_API_SECRET is unset — /api/analyze runs unauthenticated and " +
+          "analyses will NOT be attributed to a user or persisted to history. " +
+          "Set it here and in the web app (must match) to enable persistence.",
+      );
+    }
   } catch (err) {
     logger.error({ err }, "failed to start server");
     process.exit(1);
