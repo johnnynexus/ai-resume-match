@@ -12,7 +12,7 @@ conventions.
 ## Stack
 
 - **Web** (`apps/web`) — Next.js (App Router) + TypeScript + Tailwind → Vercel
-- **API** (`apps/api`) — Fastify + TypeScript, Dockerized → Railway/Render/Fly
+- **API** (`apps/api`) — Fastify + TypeScript, Dockerized → Fly.io
 - **Shared** (`packages/shared`) — analysis result schema + DTOs (Zod), shared
   by web and API so they never drift
 - **DB** — PostgreSQL (Neon) via Prisma (`prisma/schema.prisma`)
@@ -87,39 +87,47 @@ done.
 
 ## Deployment
 
-Two targets: the Next.js web app → **Vercel**, and the Dockerized API → **Railway**,
+Two targets: the Next.js web app → **Vercel**, and the Dockerized API → **Fly.io**,
 both backed by the same **Neon** Postgres. Request flow in prod:
-browser → Vercel → (server-side BFF) → Railway API → Neon / Gemini.
+browser → Vercel → (server-side BFF) → Fly.io API → Neon / Gemini.
 
 Reference env files: [`apps/api/.env.production.example`](./apps/api/.env.production.example)
 and [`apps/web/.env.production.example`](./apps/web/.env.production.example).
 
 ### 1. Database (Neon)
 Provision a production database (ideally separate from local dev). Migrations are
-applied automatically on each API deploy by `railway.json`'s `preDeployCommand`
+applied automatically on each API deploy by `fly.toml`'s `[deploy] release_command`
 (`prisma migrate deploy`). To run them by hand:
 
 ```bash
 DATABASE_URL="<neon-prod-url>" pnpm exec prisma migrate deploy --schema=prisma/schema.prisma
 ```
 
-### 2. API → Railway
-- New project → **Deploy from repo**. Config is read from [`railway.json`](./railway.json):
-  Dockerfile builder, `apps/api/Dockerfile`, healthcheck on `/health`, and the
-  migrate-on-deploy step. The build uses the **repo root** as context (needed for
-  `packages/shared` + `prisma/`).
-- Set service variables from `apps/api/.env.production.example`:
-  `GEMINI_API_KEY`, `DATABASE_URL`, `INTERNAL_API_SECRET`, `ALLOWED_ORIGIN`.
-  Railway injects `PORT` — leave it unset.
-- Note the public API URL Railway assigns.
+### 2. API → Fly.io
+Config lives in [`fly.toml`](./fly.toml) (Dockerfile build, `/health` check,
+migrate-on-deploy release command, `internal_port = 8080`). Run all commands
+**from the repo root** so the build context includes `packages/shared` + `prisma/`.
+
+```bash
+fly launch --no-deploy        # first time only; keep the committed fly.toml
+fly secrets set \
+  GEMINI_API_KEY=... \
+  DATABASE_URL="<neon-prod-url>" \
+  INTERNAL_API_SECRET="<shared secret>" \
+  ALLOWED_ORIGIN=https://<your-vercel-domain>
+fly deploy                    # builds apps/api/Dockerfile, runs migrations, ships
+```
+
+Note the app URL Fly assigns (e.g. `https://resumematch-api.fly.dev`).
 
 ### 3. Web → Vercel
 - Import the repo with **Root Directory = `apps/web`** (Next.js is auto-detected;
   the pnpm workspace resolves `@resumematch/shared` from the root lockfile).
 - Set project env vars from `apps/web/.env.production.example`: `API_URL` and
-  `NEXT_PUBLIC_API_URL` (the Railway URL), `INTERNAL_API_SECRET`, `DATABASE_URL`,
+  `NEXT_PUBLIC_API_URL` (the Fly URL), `INTERNAL_API_SECRET`, `DATABASE_URL`,
   `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET`.
-- After the first deploy, set the API's `ALLOWED_ORIGIN` on Railway to the Vercel URL.
+- After the first deploy, point the API's `ALLOWED_ORIGIN` at the Vercel URL
+  (`fly secrets set ALLOWED_ORIGIN=https://<your-vercel-domain>`).
 
 ### 4. Google OAuth (production)
 In Google Cloud Console → your OAuth client, add:
@@ -127,13 +135,14 @@ In Google Cloud Console → your OAuth client, add:
 - Authorized origin: `https://<your-vercel-domain>`
 
 ### Two things that will break it if missed
-1. **`INTERNAL_API_SECRET` must be identical** in Vercel and Railway — otherwise
+1. **`INTERNAL_API_SECRET` must be identical** in Vercel and Fly.io — otherwise
    the BFF → API call is rejected with 401.
-2. **Migrations must run against Neon** (`railway.json` handles this on deploy;
-   run manually the first time if deploying elsewhere).
+2. **Migrations must run against Neon** (`fly.toml`'s release command handles this
+   on deploy; run manually the first time if deploying elsewhere).
 
 ### Container image (CI)
 On every push to `main`, CI builds and pushes the API image to GHCR at
-`ghcr.io/<owner>/<repo>-api` (tags: `latest` + short SHA). Railway builds from the
-Dockerfile directly, so the GHCR image is an independent artifact — you can point
-Railway at it instead ("Deploy from image") if you prefer registry-based deploys.
+`ghcr.io/<owner>/<repo>-api` (tags: `latest` + short SHA). `fly deploy` builds from
+the Dockerfile directly, so the GHCR image is an independent artifact — you can
+deploy it instead with `fly deploy --image ghcr.io/<owner>/<repo>-api:latest` if
+you prefer registry-based deploys.

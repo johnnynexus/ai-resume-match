@@ -15,7 +15,7 @@ This is a portfolio project. Code should be clean, well-typed, tested where it m
 ## Tech Stack
 
 - **Frontend:** Next.js (App Router) + TypeScript + Tailwind CSS — deployed to **Vercel**
-- **Backend API:** Node + Fastify + TypeScript, containerized with **Docker** — deployed to **Railway** (or Render/Fly.io)
+- **Backend API:** Node + Fastify + TypeScript, containerized with **Docker** — deployed to **Fly.io** (or Railway/Render)
 - **Database:** PostgreSQL (**Neon**) accessed via **Prisma**
 - **Auth:** Auth.js (NextAuth) — or Clerk if preferred
 - **AI:** Google Gemini (`@google/genai`, default) or Anthropic Claude (`@anthropic-ai/sdk`), swappable via `LLM_PROVIDER`
@@ -25,7 +25,7 @@ This is a portfolio project. Code should be clean, well-typed, tested where it m
 ### Important architecture constraint
 **Vercel does not run Docker containers.** That is intentional in this design, not a bug. The split is:
 - Next.js frontend → Vercel (auto-deploys on push to `main`)
-- Dockerized Node API → Railway/Render/Fly (deploys from the Dockerfile)
+- Dockerized Node API → Fly.io (deploys from the Dockerfile; see `fly.toml`)
 
 The Node API exists for two concrete reasons worth being able to explain: (1) it sidesteps Vercel serverless function timeout limits during PDF parsing + streaming LLM calls, and (2) it isolates the LLM API key and file handling entirely server-side in a service that never ships to the client. Do not move the LLM calls or PDF parsing into Next.js route handlers without a deliberate reason.
 
@@ -40,7 +40,7 @@ The Node API exists for two concrete reasons worth being able to explain: (1) it
 │   │   ├── app/             # App Router routes
 │   │   ├── components/
 │   │   └── lib/             # client-side API helpers, auth
-│   └── api/                 # Fastify backend (Docker → Railway)
+│   └── api/                 # Fastify backend (Docker → Fly.io)
 │       ├── src/
 │       │   ├── routes/      # HTTP route handlers
 │       │   ├── services/    # llm/, pdf.ts, keywords.ts
@@ -209,7 +209,7 @@ Backend API (`apps/api`):
 - `INTERNAL_API_SECRET` (shared with the web BFF; when set, `/api/analyze` requires trusted headers)
 
 Frontend (`apps/web`):
-- `NEXT_PUBLIC_API_URL` (the Railway API URL)
+- `NEXT_PUBLIC_API_URL` (the Fly.io API URL)
 - `API_URL` (server-side BFF proxy target, usually same as above)
 - `INTERNAL_API_SECRET` (shared with the API; must match)
 - `DATABASE_URL` (Neon — required for sign-in user upsert and history)
