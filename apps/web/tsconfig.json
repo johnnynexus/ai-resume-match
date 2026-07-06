@@ -4,6 +4,8 @@
     "lib": ["DOM", "DOM.Iterable", "ES2022"],
     "jsx": "preserve",
     "noEmit": true,
+    "declaration": false,
+    "declarationMap": false,
     "allowJs": true,
     "incremental": true,
     "module": "ESNext",

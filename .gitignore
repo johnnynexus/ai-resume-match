@@ -13,10 +13,11 @@ out/
 prisma/*.db
 prisma/migrations/dev.db*
 
-# Environment — never commit real secrets (.env.example is committed)
+# Environment — never commit real secrets (only *.example files are committed)
 .env
 .env.*
 !.env.example
+!.env.production.example
 
 # Test / coverage
 coverage/

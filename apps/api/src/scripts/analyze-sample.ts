@@ -1,13 +1,14 @@
 import "dotenv/config";
 import { extractKeywords } from "../services/keywords.js";
-import { analyzeResume } from "../services/claude.js";
+import { analyzeResume, getLlmProvider } from "../services/llm/index.js";
 
 /**
- * Run the Claude core against hardcoded text — no HTTP, DB, UI, or auth.
- * This is the "de-risk the project" path from CLAUDE.md: prove the forced
- * tool-use call returns clean, validated, schema-conforming data first.
+ * Run the LLM core against hardcoded text — no HTTP, DB, UI, or auth.
+ * This is the "de-risk the project" path from CLAUDE.md: prove structured
+ * output returns clean, validated, schema-conforming data first.
  *
- *   ANTHROPIC_API_KEY=sk-ant-... pnpm --filter api analyze:sample
+ *   GEMINI_API_KEY=... pnpm --filter api analyze:sample
+ *   LLM_PROVIDER=claude ANTHROPIC_API_KEY=... pnpm --filter api analyze:sample
  */
 
 const SAMPLE_RESUME = `
@@ -54,7 +55,8 @@ async function main() {
   const keywords = extractKeywords(SAMPLE_JOB);
   console.log("Deterministic keyword baseline:");
   console.log(keywords.map((k) => `  - ${k.keyword}${k.known ? " (known skill)" : ""}`).join("\n"));
-  console.log("\nCalling Claude (forced tool use, streaming)...\n");
+  const provider = getLlmProvider();
+  console.log(`\nCalling ${provider.name} (structured output, streaming)...\n`);
 
   const result = await analyzeResume({
     resumeText: SAMPLE_RESUME,

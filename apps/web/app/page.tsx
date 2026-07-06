@@ -1,20 +1,23 @@
 "use client";
 
 import { useState } from "react";
+import { useSession } from "next-auth/react";
 import type { AnalyzeResponse } from "@resumematch/shared";
 import { analyze, parseResume, ApiRequestError } from "@/lib/api";
 import { AnalysisView } from "@/components/AnalysisView";
+import { AuthButton } from "@/components/AuthButton";
 
 export default function HomePage() {
+  const { data: session, status } = useSession();
   const [file, setFile] = useState<File | null>(null);
   const [jobText, setJobText] = useState("");
   const [jobTitle, setJobTitle] = useState("");
   const [jobCompany, setJobCompany] = useState("");
-  const [status, setStatus] = useState<"idle" | "parsing" | "analyzing">("idle");
+  const [status_, setStatus] = useState<"idle" | "parsing" | "analyzing">("idle");
   const [error, setError] = useState<string | null>(null);
   const [response, setResponse] = useState<AnalyzeResponse | null>(null);
 
-  const busy = status !== "idle";
+  const busy = status_ !== "idle";
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -54,10 +57,32 @@ export default function HomePage() {
     }
   }
 
+  if (status === "loading") {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-12">
+        <p className="text-neutral-500">Loading…</p>
+      </main>
+    );
+  }
+
+  if (!session) {
+    return (
+      <main className="mx-auto max-w-2xl px-4 py-12">
+        <header className="mb-8">
+          <h1 className="text-3xl font-bold">ResumeMatch</h1>
+          <p className="mt-2 text-neutral-500">
+            Sign in to upload your resume and analyze how well it matches a job description.
+          </p>
+        </header>
+        <AuthButton />
+      </main>
+    );
+  }
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-12">
       <header className="mb-8">
-        <h1 className="text-3xl font-bold">ResumeMatch</h1>
+        <h1 className="text-3xl font-bold">Analyze a match</h1>
         <p className="text-neutral-500">
           Upload your resume and paste a job description to see how well they match.
         </p>
@@ -111,9 +136,9 @@ export default function HomePage() {
           disabled={busy}
           className="rounded-lg bg-neutral-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50 dark:bg-white dark:text-neutral-900"
         >
-          {status === "parsing"
+          {status_ === "parsing"
             ? "Parsing resume…"
-            : status === "analyzing"
+            : status_ === "analyzing"
               ? "Analyzing…"
               : "Analyze match"}
         </button>

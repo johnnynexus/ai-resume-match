@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { analysisResultSchema } from "./analysis.js";
+import { analysisResultSchema } from "./analysis";
 
 /**
  * DTOs for the API boundary, shared by web and API. The API validates incoming

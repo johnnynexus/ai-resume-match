@@ -6,7 +6,7 @@ This file gives Claude Code the context it needs to work effectively in this rep
 
 ## Project Overview
 
-**ResumeMatch** — a full-stack app that analyzes how well a resume matches a job description. A user uploads a resume (PDF) and pastes a job description; the app parses the resume, sends both to Claude with a forced JSON schema, and returns a structured analysis: an overall match score, matched skills with evidence, missing keywords, section-level feedback, and concrete before/after rewrite suggestions. Authenticated users keep a history of past analyses.
+**ResumeMatch** — a full-stack app that analyzes how well a resume matches a job description. A user uploads a resume (PDF) and pastes a job description; the app parses the resume, sends both to an LLM (Gemini by default, Claude optional) with a forced JSON schema, and returns a structured analysis: an overall match score, matched skills with evidence, missing keywords, section-level feedback, and concrete before/after rewrite suggestions. Authenticated users keep a history of past analyses.
 
 This is a portfolio project. Code should be clean, well-typed, tested where it matters, and explainable in an interview. Favor clarity over cleverness.
 
@@ -15,19 +15,19 @@ This is a portfolio project. Code should be clean, well-typed, tested where it m
 ## Tech Stack
 
 - **Frontend:** Next.js (App Router) + TypeScript + Tailwind CSS — deployed to **Vercel**
-- **Backend API:** Node + Fastify + TypeScript, containerized with **Docker** — deployed to **Railway** (or Render/Fly.io)
+- **Backend API:** Node + Fastify + TypeScript, containerized with **Docker** — deployed to **Fly.io** (or Railway/Render)
 - **Database:** PostgreSQL (**Neon**) accessed via **Prisma**
 - **Auth:** Auth.js (NextAuth) — or Clerk if preferred
-- **AI:** Anthropic Messages API (`@anthropic-ai/sdk`)
+- **AI:** Google Gemini (`@google/genai`, default) or Anthropic Claude (`@anthropic-ai/sdk`), swappable via `LLM_PROVIDER`
 - **Testing:** Vitest (unit) + Playwright (one e2e flow)
 - **CI/CD:** GitHub Actions (lint, typecheck, test, build, push Docker image)
 
 ### Important architecture constraint
 **Vercel does not run Docker containers.** That is intentional in this design, not a bug. The split is:
 - Next.js frontend → Vercel (auto-deploys on push to `main`)
-- Dockerized Node API → Railway/Render/Fly (deploys from the Dockerfile)
+- Dockerized Node API → Fly.io (deploys from the Dockerfile; see `fly.toml`)
 
-The Node API exists for two concrete reasons worth being able to explain: (1) it sidesteps Vercel serverless function timeout limits during PDF parsing + streaming Claude calls, and (2) it isolates the Anthropic API key and file handling entirely server-side in a service that never ships to the client. Do not move the Claude calls or PDF parsing into Next.js route handlers without a deliberate reason.
+The Node API exists for two concrete reasons worth being able to explain: (1) it sidesteps Vercel serverless function timeout limits during PDF parsing + streaming LLM calls, and (2) it isolates the LLM API key and file handling entirely server-side in a service that never ships to the client. Do not move the LLM calls or PDF parsing into Next.js route handlers without a deliberate reason.
 
 ---
 
@@ -40,10 +40,10 @@ The Node API exists for two concrete reasons worth being able to explain: (1) it
 │   │   ├── app/             # App Router routes
 │   │   ├── components/
 │   │   └── lib/             # client-side API helpers, auth
-│   └── api/                 # Fastify backend (Docker → Railway)
+│   └── api/                 # Fastify backend (Docker → Fly.io)
 │       ├── src/
 │       │   ├── routes/      # HTTP route handlers
-│       │   ├── services/    # claude.ts, pdf.ts, keywords.ts
+│       │   ├── services/    # llm/, pdf.ts, keywords.ts
 │       │   ├── lib/         # prisma client, config, logger
 │       │   └── index.ts     # server entry
 │       ├── Dockerfile
@@ -126,17 +126,17 @@ model Analysis {
 
 ---
 
-## Claude Integration (the core of the app)
+## LLM Integration (the core of the app)
 
-Read official docs before changing this — the structured-output area moves: https://docs.claude.com/en/docs_site_map.md
+Provider abstraction lives in `apps/api/src/services/llm/`. Set `LLM_PROVIDER=gemini` (default) or `LLM_PROVIDER=claude`.
 
-**Model:** default to `claude-sonnet-4-6`. It balances quality and cost well for structured extraction. Only reach for an Opus model if analysis quality is genuinely insufficient. Always use the exact versioned model string in code — never an unversioned alias.
+**Default model:** `gemini-2.5-flash` (Gemini) or `claude-sonnet-4-6` (Claude). Override with `LLM_MODEL`. Always use exact versioned model strings — never unversioned aliases.
 
 **Two non-negotiable design choices:**
 
-1. **Deterministic keyword baseline first.** Before calling Claude, `services/keywords.ts` extracts candidate keywords from the job description in plain code (tokenize, strip stopwords, optional known-skills dictionary). Claude then does the *semantic* matching and rewriting on top of that baseline. This is classical + AI working together, not a thin LLM wrapper — keep both halves.
+1. **Deterministic keyword baseline first.** Before calling the LLM, `services/keywords.ts` extracts candidate keywords from the job description in plain code (tokenize, strip stopwords, optional known-skills dictionary). The LLM then does the *semantic* matching and rewriting on top of that baseline. This is classical + AI working together, not a thin LLM wrapper — keep both halves.
 
-2. **Force structured output via tool use.** Define a single tool whose `input_schema` is the analysis result shape, then set `tool_choice` to force that tool so Claude must return schema-conforming data. Parse the tool-use block, not free text. (Check current docs for any newer first-class structured-output option before reworking this.)
+2. **Force structured output.** The analysis result shape lives in `packages/shared` as both a Zod schema and a JSON Schema (`ANALYSIS_JSON_SCHEMA`). Gemini uses native structured output (`responseJsonSchema`); Claude uses forced tool use (`tool_choice`). Either way, parse structured data — not free text — and validate with Zod before persisting.
 
 **Result schema** (lives in `packages/shared`):
 
@@ -170,17 +170,17 @@ type AnalysisResult = {
 
 `rewrite_suggestions` is the headline feature — the UI renders each as an inline before/after diff. Stream the response so results fill in live.
 
-**Caching:** hash `parsedText + jobText` (sha256 → `inputHash`). If an Analysis with that hash exists for the user, return it instead of re-calling Claude. Saves cost and latency on repeat runs.
+**Caching:** hash `parsedText + jobText` (sha256 → `inputHash`). If an Analysis with that hash exists for the user, return it instead of re-calling the LLM. Saves cost and latency on repeat runs.
 
-**Error handling:** if a PDF parses to empty/near-empty text it's likely a scanned/image-only file. Detect this and return a clear, user-facing error rather than sending empty text to Claude. (OCR is a documented stretch goal, not currently built.)
+**Error handling:** if a PDF parses to empty/near-empty text it's likely a scanned/image-only file. Detect this and return a clear, user-facing error rather than sending empty text to the LLM. (OCR is a documented stretch goal, not currently built.)
 
 ---
 
 ## Conventions
 
 - **TypeScript strict mode** everywhere. No `any` without a comment justifying it.
-- **No secrets in the frontend.** The Anthropic key lives only in the Node API's environment. The web app talks to the API, never to Anthropic directly.
-- **Validate inputs at the boundary** with Zod — both incoming HTTP requests and Claude's parsed output (don't trust the model blindly; validate against the schema before persisting).
+- **No secrets in the frontend.** LLM API keys live only in the Node API's environment. The web app talks to the API, never to Gemini or Anthropic directly.
+- **Validate inputs at the boundary** with Zod — both incoming HTTP requests and LLM parsed output (don't trust the model blindly; validate against the schema before persisting).
 - **Errors:** API returns structured `{ error: { code, message } }` JSON with appropriate status codes. Log server-side with the request id; never leak stack traces to the client.
 - **Commits:** Conventional Commits (`feat:`, `fix:`, `chore:`, `test:`).
 - **Components:** keep them small and presentational; data fetching lives in `lib/`.
@@ -190,7 +190,7 @@ type AnalysisResult = {
 
 ## Testing Expectations
 
-- **Unit (Vitest):** the keyword extractor (`keywords.ts`) and the Zod validation of Claude output are the highest-value targets — pure logic, easy to test, demonstrates rigor.
+- **Unit (Vitest):** the keyword extractor (`keywords.ts`) and the Zod validation of LLM output are the highest-value targets — pure logic, easy to test, demonstrates rigor.
 - **E2E (Playwright):** one happy-path flow — sign in → upload resume → paste JD → see an analysis render.
 - Don't chase coverage numbers; cover the parts that would actually break.
 
@@ -199,14 +199,22 @@ type AnalysisResult = {
 ## Environment Variables
 
 Backend API (`apps/api`):
-- `ANTHROPIC_API_KEY`
+- `GEMINI_API_KEY` (required when `LLM_PROVIDER=gemini`, the default)
+- `ANTHROPIC_API_KEY` (required when `LLM_PROVIDER=claude`)
+- `LLM_PROVIDER` (`gemini` | `claude`, default `gemini`)
+- `LLM_MODEL` (optional override; defaults to `gemini-2.5-flash` or `claude-sonnet-4-6`)
 - `DATABASE_URL` (Neon connection string)
 - `PORT`
 - `ALLOWED_ORIGIN` (the Vercel frontend URL, for CORS)
+- `INTERNAL_API_SECRET` (shared with the web BFF; when set, `/api/analyze` requires trusted headers)
 
 Frontend (`apps/web`):
-- `NEXT_PUBLIC_API_URL` (the Railway API URL)
-- `AUTH_SECRET`, plus provider creds (Auth.js)
+- `NEXT_PUBLIC_API_URL` (the Fly.io API URL)
+- `API_URL` (server-side BFF proxy target, usually same as above)
+- `INTERNAL_API_SECRET` (shared with the API; must match)
+- `DATABASE_URL` (Neon — required for sign-in user upsert and history)
+- `AUTH_SECRET`, `AUTH_GOOGLE_ID`, `AUTH_GOOGLE_SECRET` (Auth.js + Google)
+- `AUTH_TEST_MODE` (optional; enables Credentials provider for Playwright only)
 
 Keep a `.env.example` in each app committed; never commit real `.env` files.
 
@@ -216,5 +224,5 @@ Keep a `.env.example` in each app committed; never commit real `.env` files.
 
 - Prefer editing existing files over creating new ones; match the surrounding style.
 - If you change the analysis schema, update it in `packages/shared` **and** the Prisma `resultJson` consumers **and** the rendering components — they're coupled by design.
-- If you're unsure whether something belongs in the frontend or the API, default to the API for anything touching the Anthropic key, PDF bytes, or the database.
-- Build order that de-risks the project: get the Claude tool-use call returning clean, validated structured data against hardcoded text **first** — before UI, DB, or auth. That's the risky, impressive core; everything else is familiar plumbing.
+- If you're unsure whether something belongs in the frontend or the API, default to the API for anything touching the LLM API key, PDF bytes, or the database.
+- Build order that de-risks the project: get the structured-output LLM call returning clean, validated data against hardcoded text **first** — before UI, DB, or auth. That's the risky, impressive core; everything else is familiar plumbing.
