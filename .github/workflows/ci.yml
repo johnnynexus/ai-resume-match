@@ -40,13 +40,44 @@ jobs:
   docker:
     runs-on: ubuntu-latest
     needs: verify
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
-      - name: Build API Docker image
-        # Built from the repo root so the image can access packages/shared and
-        # prisma/schema.prisma (monorepo build needs the whole workspace).
-        run: docker build -f apps/api/Dockerfile -t resumematch-api .
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-      # Pushing the image to a registry is intentionally left as a follow-up —
-      # wire in registry credentials (e.g. GHCR) before enabling a push step.
+      # Authenticate only on pushes to main. PRs (incl. from forks) can't access
+      # secrets and only need the build below to validate the Dockerfile.
+      - name: Log in to GitHub Container Registry
+        if: github.event_name == 'push'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/${{ github.repository }}-api
+          tags: |
+            type=raw,value=latest,enable={{is_default_branch}}
+            type=sha,format=short
+
+      - name: Build and push API image
+        # Root context with -f apps/api/Dockerfile: the monorepo build needs
+        # packages/shared and prisma/schema.prisma. Push only on main; on PRs
+        # this builds without publishing (validates the Dockerfile).
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          push: ${{ github.event_name == 'push' }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
