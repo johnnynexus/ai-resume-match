@@ -2,7 +2,7 @@
   "name": "resumematch",
   "version": "0.1.0",
   "private": true,
-  "description": "Analyze how well a resume matches a job description, powered by Claude.",
+  "description": "Analyze how well a resume matches a job description, powered by AI.",
   "packageManager": "pnpm@9.15.0",
   "engines": {
     "node": ">=20"

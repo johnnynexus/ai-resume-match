@@ -4,8 +4,6 @@ import type {
   ApiError,
 } from "@resumematch/shared";
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8080";
-
 /** Thrown for non-2xx API responses; carries the structured error code. */
 export class ApiRequestError extends Error {
   readonly code: string;
@@ -40,11 +38,11 @@ export type ParsedResume = {
   charCount: number;
 };
 
-/** Upload a resume PDF; the API parses it server-side and returns the text. */
+/** Calls authenticated Next.js BFF routes; session is enforced server-side. */
 export async function parseResume(file: File): Promise<ParsedResume> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch(`${API_BASE}/api/resume/parse`, {
+  const res = await fetch("/api/resume/parse", {
     method: "POST",
     body: form,
   });
@@ -53,7 +51,7 @@ export async function parseResume(file: File): Promise<ParsedResume> {
 
 /** Run the analysis against parsed resume text + a job description. */
 export async function analyze(req: AnalyzeRequest): Promise<AnalyzeResponse> {
-  const res = await fetch(`${API_BASE}/api/analyze`, {
+  const res = await fetch("/api/analyze", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(req),

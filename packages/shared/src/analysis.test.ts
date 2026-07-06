@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analysisResultSchema, ANALYSIS_TOOL, type AnalysisResult } from "./analysis.js";
+import { analysisResultSchema, ANALYSIS_TOOL, type AnalysisResult } from "./analysis";
 
 const validResult: AnalysisResult = {
   overall_match_score: 72,

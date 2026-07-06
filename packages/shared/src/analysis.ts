@@ -7,10 +7,10 @@ import { z } from "zod";
  * design.
  *
  * Two artifacts live in this file and MUST stay in sync:
- *  1. `analysisResultSchema` — the Zod schema we validate Claude's output against
+ *  1. `analysisResultSchema` — the Zod schema we validate LLM output against
  *     before persisting (don't trust the model blindly).
- *  2. `ANALYSIS_TOOL` — the Claude tool whose `input_schema` is this same shape.
- *     We force `tool_choice` to this tool so Claude must return conforming data.
+ *  2. `ANALYSIS_TOOL` / `ANALYSIS_JSON_SCHEMA` — the JSON Schema handed to the
+ *     LLM provider (Claude forced tool use, Gemini structured output).
  */
 
 const importanceEnum = z.enum(["high", "medium", "low"]);
@@ -65,10 +65,10 @@ export type RewriteSuggestion = z.infer<typeof rewriteSuggestionSchema>;
 export const ANALYSIS_TOOL_NAME = "submit_resume_analysis" as const;
 
 /**
- * JSON Schema handed to Claude as the tool's `input_schema`. Kept adjacent to
- * the Zod schema above so any change is made in one place and reviewed together.
- * This guides the model; `analysisResultSchema` is what actually enforces the
- * contract before we persist anything.
+ * JSON Schema for structured LLM output. Kept adjacent to the Zod schema above
+ * so any change is made in one place and reviewed together. This guides the
+ * model; `analysisResultSchema` is what actually enforces the contract before
+ * we persist anything.
  */
 export const ANALYSIS_TOOL = {
   name: ANALYSIS_TOOL_NAME,
@@ -174,3 +174,6 @@ export const ANALYSIS_TOOL = {
     additionalProperties: false,
   },
 } as const;
+
+/** Shared JSON Schema for Gemini structured output and Claude tool input. */
+export const ANALYSIS_JSON_SCHEMA = ANALYSIS_TOOL.input_schema;

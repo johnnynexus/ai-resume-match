@@ -4,8 +4,8 @@ import { AppError } from "../lib/errors.js";
 import { inputHash } from "../lib/hash.js";
 import { getPrisma } from "../lib/prisma.js";
 import { extractKeywords } from "../services/keywords.js";
-import { analyzeResume } from "../services/claude.js";
-import { findCachedAnalysis } from "../services/cache.js";
+import { analyzeResume } from "../services/llm/index.js";
+import { findCachedAnalysis, persistAnalysis } from "../services/cache.js";
 
 export async function analyzeRoutes(app: FastifyInstance): Promise<void> {
   app.post("/api/analyze", async (request) => {
@@ -17,14 +17,13 @@ export async function analyzeRoutes(app: FastifyInstance): Promise<void> {
 
     const { resumeText, jobText } = parsed.data;
     const hash = inputHash(resumeText, jobText);
+    const userId = request.userId;
 
-    // Cache check (CLAUDE.md): return a prior analysis with the same input hash
-    // instead of re-calling Claude. Active once DATABASE_URL is configured.
     const prisma = getPrisma();
-    if (prisma) {
-      const cached = await findCachedAnalysis(prisma, hash);
+    if (prisma && userId) {
+      const cached = await findCachedAnalysis(prisma, hash, userId);
       if (cached) {
-        request.log.info({ hash }, "analysis cache hit");
+        request.log.info({ hash, userId }, "analysis cache hit");
         return { analysis: cached, cached: true } satisfies AnalyzeResponse;
       }
     }
@@ -32,10 +31,20 @@ export async function analyzeRoutes(app: FastifyInstance): Promise<void> {
     const keywords = extractKeywords(jobText);
     const analysis = await analyzeResume({ resumeText, jobText, keywords });
 
-    // NOTE: persistence (persistAnalysis) is intentionally deferred until auth
-    // lands and a real userId is available to attribute the Analysis to.
-    if (prisma) {
-      request.log.info({ hash }, "analysis computed (persistence pending auth)");
+    if (prisma && userId) {
+      await persistAnalysis(prisma, {
+        userId,
+        resumeText,
+        resumeFileName: parsed.data.resumeFileName ?? "resume.pdf",
+        jobText,
+        jobTitle: parsed.data.jobTitle,
+        jobCompany: parsed.data.jobCompany,
+        inputHash: hash,
+        result: analysis,
+      });
+      request.log.info({ hash, userId }, "analysis persisted");
+    } else if (prisma) {
+      request.log.info({ hash }, "analysis computed (no userId — not persisted)");
     }
 
     return { analysis, cached: false } satisfies AnalyzeResponse;
